@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BENS MOVEIS PERMANENTES</title>
+    <title>Guia de Circulação BMP</title>
     <style>
+        /* Estilos para a página */
         body {
             font-family: Arial, sans-serif;
             background-color: #f4f4f9;
@@ -12,88 +13,176 @@
             padding: 0;
         }
         .container {
-            max-width: 1200px;
+            max-width: 800px;
             margin: 20px auto;
+            background: #fff;
             padding: 20px;
-            background: #ffffff;
-            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
             border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
         h1 {
             text-align: center;
             color: #333;
         }
-        form {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 20px;
+        .form-group {
+            margin-bottom: 15px;
         }
-        input[type="text"] {
-            width: 300px;
-            padding: 10px;
-            border: 1px solid #ddd;
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        select, input[type="text"], input[type="number"], button {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
             border-radius: 4px;
-            margin-right: 10px;
+            font-size: 14px;
         }
         button {
-            padding: 10px 20px;
-            background-color: #007BFF;
+            background-color: #007bff;
             color: #fff;
             border: none;
-            border-radius: 4px;
             cursor: pointer;
         }
         button:hover {
             background-color: #0056b3;
         }
-        .cards {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            justify-content: center;
+        .error {
+            color: red;
+            font-size: 14px;
         }
-        .card {
-            background: #007BFF;
-            color: #ffffff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
-            width: 300px;
+        .success {
+            color: green;
+            font-size: 14px;
         }
-        .card h3 {
-            margin: 0 0 10px;
-            font-size: 1.5rem;
+        footer {
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            padding: 10px 0;
+            background-color: #f4f4f9;
         }
-        .card p {
-            margin: 5px 0;
+        .bmp-quantidade {
+            margin-bottom: 15px;
         }
     </style>
+    <!-- Adicionando jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
 <body>
     <div class="container">
-        <h1>Consulta de Bens Móveis Permanentes</h1>
-        <form method="POST" action="/">
-            <input type="text" name="bmp_query" placeholder="Digite o número do BMP" required />
-            <button type="submit">Buscar</button>
-        </form>
-
-        <!-- Exibir os resultados somente se houver consulta -->
-        {% if results is not none and not results.empty %}
-            <div class="cards">
-                {% for _, row in results.iterrows() %}
-                    <div class="card">
-                        <h3>Nº BMP: {{ row['Nº BMP'] }}</h3>
-                        <p><strong>Nomeclatura:</strong> {{ row['NOMECLATURA/COMPONENTE'] }}</p>
-                        <p><strong>Número de Série:</strong> {{ row['Nº SERIE'] }}</p>
-                        <p><strong>Valor Atualizado:</strong> R$ {{ "{:,.2f}".format(row['VL. ATUALIZ.']) }}</p>
-                        <p><strong>Dependência:</strong> {{ row['DEPENDENCIA'] }}</p>
-                    </div>
-                {% endfor %}
+        <h1>Guia de Circulação BMP</h1>
+        <form id="guia-form">
+            <div class="error">
+                {% if error %}
+                    {{ error }}
+                {% endif %}
             </div>
-        {% elif results is not none %}
-            <p style="text-align: center; color: #555;">Nenhum resultado encontrado.</p>
-        {% endif %}
+            <div class="form-group">
+                <label for="bmp_number">Números de BMP (separados por vírgula):</label>
+                <input type="text" id="bmp_number" name="bmp_numbers" placeholder="Ex.: 123, 456, 789">
+            </div>
+            <div class="form-group">
+                <label for="secao_origem">Seção de Origem:</label>
+                <input type="text" id="secao_origem" name="secao_origem" readonly>
+            </div>
+            <div class="form-group">
+                <label for="chefia_origem">Chefia de Origem:</label>
+                <input type="text" id="chefia_origem" name="chefia_origem" readonly>
+            </div>
+            <div class="form-group">
+                <label for="secao_destino">Seção de Destino:</label>
+                <select id="secao_destino" name="secao_destino">
+                    <option value="" disabled selected>Selecione uma seção</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="chefia_destino">Chefia de Destino:</label>
+                <input type="text" id="chefia_destino" name="chefia_destino" readonly>
+            </div>
+            <div class="form-group">
+                <button type="submit">Gerar Guia</button>
+            </div>
+        </form>
     </div>
+
+    <div class="observacao" id="observacao">
+        A Guia gerada deve ser encaminhada a Seção de Registro, via SIGADAER.
+        Para gerar o modelo do ofício, <a href="http://www.gapls.intraer/index.php/setores-novo/assessorias/comunicacao-social/category/178-modelos" target="_blank">clique aqui</a>.
+    </div>
+
+    <footer>
+        Criado por <strong>Cb Irapuan</strong>
+    </footer>
+
+<script>
+jQuery.noConflict();
+jQuery(document).ready(function($) {
+    // Função para atualizar os campos de origem com base no(s) BMP(s)
+    $("#bmp_number").on("input", function() {
+        const bmpNumbers = $(this).val().split(",").map(bmp => bmp.trim());
+
+        if (bmpNumbers.length > 0) {
+            $.ajax({
+                url: "/autocomplete", // Endpoint para obter os dados dos BMPs
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({ "bmp_numbers": bmpNumbers }),
+                success: function(response) {
+                    if (!response || Object.keys(response).length === 0) {
+                        alert("Nenhum dado encontrado para os BMPs fornecidos.");
+                        $("#secao_origem, #chefia_origem").val(""); // Limpa os campos
+                        return;
+                    }
+
+                    // Verifica se todos os BMPs pertencem à mesma seção
+                    const secoes = new Set();
+                    bmpNumbers.forEach(bmp => {
+                        if (response[bmp]) {
+                            secoes.add(response[bmp].secao_origem);
+                        }
+                    });
+
+                    if (secoes.size > 1) {
+                        alert("Os BMPs fornecidos pertencem a seções diferentes. Verifique os dados.");
+                        $("#secao_origem, #chefia_origem").val(""); // Limpa os campos
+                        return;
+                    }
+
+                    // Todos os BMPs pertencem à mesma seção - preenche os campos
+                    const firstBmp = bmpNumbers[0]; // Usa o primeiro BMP como referência
+                    if (response[firstBmp]) {
+                        $("#secao_origem
+   }
+                },
+                error: function() {
+                    console.error("Erro ao buscar os dados dos BMPs!");
+                }
+            });
+        }
+    });
+
+    // Evento para preencher a chefia de destino quando a seção de destino for selecionada
+    $("#secao_destino").on("change", function() {
+        const secao = $(this).val();
+        if (secao) {
+            $.ajax({
+                url: "/get_chefia",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({ "secao": secao }),
+                success: function(response) {
+                    $("#chefia_destino").val(response.chefia || "");
+                },
+                error: function() {
+                    console.error("Erro ao buscar a chefia de destino!");
+                }
+            });
+        }
+    });
+});
+</script>
 </body>
 </html>
-
