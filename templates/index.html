@@ -33,7 +33,7 @@
             font-weight: bold;
             color: #555;
         }
-        select, input[type="text"], input[type="number"], button {
+        select, input[type="text"], button {
             width: 100%;
             padding: 8px;
             border: 1px solid #ccc;
@@ -49,6 +49,10 @@
         button:hover {
             background-color: #0056b3;
         }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
         .error {
             color: red;
             font-size: 14px;
@@ -57,6 +61,11 @@
             color: green;
             font-size: 14px;
         }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
         footer {
             text-align: center;
             font-size: 12px;
@@ -64,17 +73,13 @@
             padding: 10px 0;
             background-color: #f4f4f9;
         }
-        .bmp-quantidade {
-            margin-bottom: 15px;
-        }
     </style>
-    <!-- Adicionando jQuery -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
 <body>
     <div class="container">
         <h1>Guia de Circulação BMP</h1>
-        <form id="guia-form">
+        <form method="POST" action="/guia_bens" id="guia-form">        
             <div class="error">
                 {% if error %}
                     {{ error }}
@@ -96,6 +101,9 @@
                 <label for="secao_destino">Seção de Destino:</label>
                 <select id="secao_destino" name="secao_destino">
                     <option value="" disabled selected>Selecione uma seção</option>
+                    {% for secao in secoes_destino %}
+                        <option value="{{ secao }}">{{ secao }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="form-group">
@@ -103,9 +111,13 @@
                 <input type="text" id="chefia_destino" name="chefia_destino" readonly>
             </div>
             <div class="form-group">
-                <button type="submit">Gerar Guia</button>
+                <button type="button" id="gerar_guia">Gerar Guia</button>
             </div>
         </form>
+
+        <div class="loading" id="loading">
+            <p>Carregando...</p>
+        </div>
     </div>
 
     <div class="observacao" id="observacao">
@@ -118,71 +130,80 @@
     </footer>
 
 <script>
-jQuery.noConflict();
-jQuery(document).ready(function($) {
-    // Função para atualizar os campos de origem com base no(s) BMP(s)
-    $("#bmp_number").on("input", function() {
-        const bmpNumbers = $(this).val().split(",").map(bmp => bmp.trim());
+    $(document).ready(function() {
+        // Função para preencher os campos de origem com base no número de BMP
+        $("#bmp_number").on("input", function() {
+            const bmpNumbers = $(this).val().split(",").map(bmp => bmp.trim());
 
-        if (bmpNumbers.length > 0) {
-            $.ajax({
-                url: "/autocomplete", // Endpoint para obter os dados dos BMPs
-                type: "POST",
-                contentType: "application/json",
-                data: JSON.stringify({ "bmp_numbers": bmpNumbers }),
-                success: function(response) {
-                    if (!response || Object.keys(response).length === 0) {
-                        alert("Nenhum dado encontrado para os BMPs fornecidos.");
-                        $("#secao_origem, #chefia_origem").val(""); // Limpa os campos
-                        return;
-                    }
-
-                    // Verifica se todos os BMPs pertencem à mesma seção
-                    const secoes = new Set();
-                    bmpNumbers.forEach(bmp => {
-                        if (response[bmp]) {
-                            secoes.add(response[bmp].secao_origem);
+            if (bmpNumbers.length > 0) {
+                $.ajax({
+                    url: "/autocomplete",  // Rota para buscar dados do BMP
+                    type: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify({ "bmp_numbers": bmpNumbers }),  // Passa todos os BMPs
+                    success: function(response) {
+                        console.log("Resposta do servidor:", response);
+                        if (response) {
+                            // Preenche apenas o primeiro BMP retornado
+                            const firstBmp = bmpNumbers[0];
+                            if (response[firstBmp]) {
+                                $("secao_origem").val(response[firstBmp].secao_origem || "");
+                                $("chefia_origem").val(response[firstBmp].chefia_origem || "");
+                            } else {
+                                console.error("Nenhum dado encontrado para o BMP informado.");
+                            }
                         }
-                    });
-
-                    if (secoes.size > 1) {
-                        alert("Os BMPs fornecidos pertencem a seções diferentes. Verifique os dados.");
-                        $("#secao_origem, #chefia_origem").val(""); // Limpa os campos
-                        return;
+                    },
+                    error: function(err) {
+                        console.error("Erro ao buscar os dados dos BMPs:", err);
                     }
+                });
+            }
+        });
 
-                    // Todos os BMPs pertencem à mesma seção - preenche os campos
-                    const firstBmp = bmpNumbers[0]; // Usa o primeiro BMP como referência
-                    if (response[firstBmp]) {
-                        $("#secao_origem)
-   }
-                },
-                error: function() {
-                    console.error("Erro ao buscar os dados dos BMPs!");
-                }
-            });
-        }
-    });
+        // Preenche a chefia de destino com base na seção selecionada
+        $("#secao_destino").on("change", function() {
+            const secaoDestino = $(this).val();
+            if (secaoDestino) {
+                $.ajax({
+                    url: "/get_chefia",
+                    type: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify({ "secao": secaoDestino, "tipo": "destino" }),
+                    success: function(response) {
+                       if (response.chefia) {
+                            $("chefia_destino").val(response.chefia);
+                        } else {
+                            $("chefia_destino").val('');
+                        }
+                    },
+                    error: function() {
+                        console.error("Erro ao buscar a chefia de destino!");
+                    }
+                });
+            } else {
+                $("#chefia_destino").val('');
+            }
+        });
 
-    // Evento para preencher a chefia de destino quando a seção de destino for selecionada
-    $("#secao_destino").on("change", function() {
-        const secao = $(this).val();
-        if (secao) {
-            $.ajax({
-                url: "/get_chefia",
-                type: "POST",
-                contentType: "application/json",
-                data: JSON.stringify({ "secao": secao }),
-                success: function(response) {
-                    $("#chefia_destino").val(response.chefia || "");
-                },
-                error: function() {
-                    console.error("Erro ao buscar a chefia de destino!");
-                }
+                $.ajax({
+                    url: "/gerar_guia",
+                    type: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify(data),
+                    success: function () {
+                        alert("Guia gerada com sucesso!");
+                    },
+                    error: function () {
+                        alert("Erro ao gerar a guia. Tente novamente.");
+                    },
+                    complete: function () {
+                        $("#loading").hide();
+                        $("#gerar_guia").prop("disabled", false);
+                    }
+                });
             });
-        }
-    });
-});
-</script>
+        });
+    </script>
 </body>
 </html>
