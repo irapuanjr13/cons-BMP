@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, send_file, jsonify
+flask import Flask, render_template, request, send_file, jsonify
+from io import BytesIO
 import pandas as pd
 import gdown
 from fpdf import FPDF
@@ -12,8 +13,9 @@ GOOGLE_DRIVE_FILE_ID = "1mPYlc_uC3SfJnNQ_ToG6eVmn2ZYMhPCX"
 def get_excel_from_google_drive():
     """Baixa a planilha do Google Drive e retorna o DataFrame."""
     url = f"https://drive.google.com/uc?id={GOOGLE_DRIVE_FILE_ID}"
-    output_file = "patrimonio.xlsx"  # Nome temporário do arquivo baixado
-    gdown.download(url, output_file, quiet=False)
+    output_file = "patrimonio.xlsx"
+    if not os.path.exists(output_file):
+        gdown.download(url, output_file, quiet=False)
     return pd.read_excel(output_file)
 
 # Carregar a planilha no início do programa
@@ -21,23 +23,19 @@ df = get_excel_from_google_drive()
 
 class PDF(FPDF):
     def __init__(self):
-        super()._init_('P','mm','A4')
-
-    def headre(self):
-        self.ser_font("Arial", "B", 12)
-        self.cell(0,6, "MINISTÉRIO DA DEFESA", IN=True, align="C")
-        self.cell(0,6, "COMANDO DA AERONÁUTICA", ln=True, align="C")
+        super().__init__('P', 'mm', 'A4')  # Orientação retrato, milímetros, formato A4
+        
+    def header(self):
+        self.set_font("Arial", "B", 12)
+        self.cell(0, 6, "MINISTÉRIO DA DEFESA", ln=True, align="C")
+        self.cell(0, 6, "COMANDO DA AERONÁUTICA", ln=True, align="C")
         self.cell(0, 6, "GRUPAMENTO DE APOIO DE LAGOA SANTA", ln=True, align="C")
         self.cell(0, 8, "GUIA DE MOVIMENTAÇÃO DE BEM MÓVEL PERMANENTE ENTRE AS SEÇÕES DO GAPLS", ln=True, align="C")
         self.ln(10)
 
     def fix_text(self, text):
-        """Corrige caracteres incompatíveis com a codificação latin-1."""
         replacements = {
-            "–": "-",  # Substituir travessão por hífen
-            "“": '"',  # Substituir aspas abertas por aspas duplas
-            "”": '"',  # Substituir aspas fechadas por aspas duplas
-            "’": "'",  # Substituir apóstrofo por aspas simples
+            "–": "-", "“": '"', "”": '"', "’": "'"
         }
         for old, new in replacements.items():
             text = text.replace(old, new)
@@ -45,32 +43,28 @@ class PDF(FPDF):
 
     def add_table(self, dados_bmps):
         col_widths = [25, 70, 55, 35]
-        headers = ["Nº BMP", "Nomenclatura", "Nº de Série", "Valor Atualizado"]
+        headers = ["Nº BMP", "Nomenclatura", "Nº Série", "Valor Atualizado"]
 
-        # Adicionar cabeçalho da tabela
         self.set_font("Arial", "B", 10)
         for width, header in zip(col_widths, headers):
             self.cell(width, 10, header, border=1, align="C")
         self.ln()
 
-        # Adicionar as linhas da tabela
         self.set_font("Arial", size=10)
         for _, row in dados_bmps.iterrows():
-            # Calcular a altura necessária para a célula "Nomenclatura"
             text = self.fix_text(row["NOMECLATURA/COMPONENTE"])
             line_count = self.get_string_width(text) // col_widths[1] + 1
-            row_height = 10 * line_count  # 10 é a altura padrão da célula
-            
-            self.cell(col_widths[0], row_height, str(row["Nº BMP"]), border=1, align="C")
+            row_height = 10 * line_count
 
+            self.cell(col_widths[0], row_height, str(row["Nº BMP"]), border=1, align="C")
             x, y = self.get_x(), self.get_y()
             self.multi_cell(col_widths[1], 10, text, border=1)
-            self.set_xy(x + col_widths[1], y)  # Reposicionar para a próxima coluna
+            self.set_xy(x + col_widths[1], y)
 
-            self.cell(col_widths[2], row_height, self.fix_text(row["Nº SERIE"]), border=1, align="C")
-            self.cell(col_widths[3], row_height, f"R$ {row['VL. ATUALIZ.']:.2f}".replace('.', ','), border=1, align="R")
+            self.cell(col_widths[2], row_height, self.fix_text(str(row["Nº SERIE"])), border=1, align="C")
+            valor_atualizado = f"R$ {row['VL. ATUALIZ.']:.2f}".replace('.', ',') if not pd.isnull(row['VL. ATUALIZ.']) else "N/A"
+            self.cell(col_widths[3], row_height, valor_atualizado, border=1, align="R")
             self.ln()
-
 
     def add_details(self, secao_destino, chefia_origem, secao_origem, chefia_destino):
         text = f"""
@@ -103,12 +97,11 @@ Dirigente Máximo
 """
         self.multi_cell(0, 8, self.fix_text(text))
 
-@app.route("/", methods=["GET", "POST"])
-def index():
+@app.route("/guia_bens", methods=["GET", "POST"])
+def guia_bens():
     secoes_origem = df['Seção de Origem'].dropna().unique().tolist()
     secoes_destino = df['Seção de Destino'].dropna().unique().tolist()
-    results = []
-    
+
     if request.method == "POST":
         bmp_numbers = request.form.get("bmp_numbers")
         secao_origem = request.form.get("secao_origem")
@@ -118,39 +111,30 @@ def index():
 
         if not (bmp_numbers and secao_origem and secao_destino and chefia_origem and chefia_destino):
             return render_template(
-                "index.html",
+                "guia_bens.html",
                 secoes_origem=secoes_origem,
                 secoes_destino=secoes_destino,
                 error="Preencha todos os campos!",
             )
 
         bmp_list = [bmp.strip() for bmp in bmp_numbers.split(",")]
-        dados_bmps = df[df["Nº BMP"].astype(str).isin(bmp_list)]
+        dados_bmps = df[df["Nº BMP"].astype(str).str.strip().isin(bmp_list)]
         if dados_bmps.empty:
             return render_template(
-                "index.html",
+                "guia_bens.html",
                 secoes_origem=secoes_origem,
                 secoes_destino=secoes_destino,
                 error="Nenhum BMP encontrado para os números fornecidos.",
             )
 
-        if not dados_bmps["CONTA"].eq("87 - MATERIAL DE CONSUMO DE USO DURADOURO").any():
+        if dados_bmps["CONTA"].eq("87 - MATERIAL DE CONSUMO DE USO DURADOURO").any():
             return render_template(
-                "index.html",
+                "guia_bens.html",
                 secoes_origem=secoes_origem,
                 secoes_destino=secoes_destino,
-                error="Estes itens pertencem à conta '87 - MATERIAL DE CONSUMO DE USO DURADOURO'."
+                error="Itens da conta '87 - MATERIAL DE CONSUMO DE USO DURADOURO' não podem ser processados."
             )
-        results = dados_bmps
 
-        return render_template(
-            "index.html",
-            secoes_origem=secoes_origem,
-            secoes_destino=secoes_destino,
-            results=results
-        
-        )
-    
         pdf = PDF()
         pdf.add_page()
         pdf.add_table(dados_bmps)
@@ -161,46 +145,9 @@ def index():
         return send_file(output_path, as_attachment=True)
 
     return render_template(
-        "index.html", secoes_origem=secoes_origem, secoes_destino=secoes_destino
+        "guia_bens.html", secoes_origem=secoes_origem, secoes_destino=secoes_destino
     )
 
-@app.route("/autocomplete", methods=["POST"])
-def autocomplete():
-    data = request.get_json()
-    bmp_numbers = data.get("bmp_numbers", [])
-
-    if not bmp_numbers:
-        return jsonify({"error": "Nenhum BMP fornecido!"}), 400
-
-    response = {}
-    for bmp in bmp_numbers:
-        filtro_bmp = df[df["Nº BMP"].astype(str) == bmp]
-        if not filtro_bmp.empty:
-            secao_origem = filtro_bmp["Seção de Origem"].values[0]
-            chefia_origem = filtro_bmp["Chefia de Origem"].values[0]
-            response[bmp] = {
-                "secao_origem": secao_origem,
-                "chefia_origem": chefia_origem
-            }
-        else:
-            response[bmp] = {"secao_origem": "", "chefia_origem": ""}
-
-    return jsonify(response)
-
-@app.route("/get_chefia", methods=["POST"])
-def get_chefia():
-    data = request.json
-    secao = data.get("secao")
-    tipo = data.get("tipo")
-
-    if tipo == "destino":
-        chefia = df[df['Seção de Destino'] == secao]['Chefia de Destino'].dropna().unique()
-    elif tipo == "origem":
-        chefia = df[df['Seção de Origem'] == secao]['Chefia de Origem'].dropna().unique()
-    else:
-        return jsonify({"error": "Tipo inválido!"}), 400
-
-    return jsonify({"chefia": chefia.tolist()})
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))  # Lê a variável PORT ou usa 5000 como padrão
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.getenv("PORT", 5000))
+    app.run(debug=True, host="0.0.0.0", port=port)
